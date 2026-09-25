@@ -1,36 +1,536 @@
+<script>
+const STORAGE_KEY = "jennie_song_summer_tracker";
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Yves Cekeyy</title>
-    <link rel="stylesheet" href="assets/css/style.css">
-</head>
-<body>
-    <header>
-        <img src="assets/images/logo.png" alt="Logo" class="logo">
-        <h1>Yves Cekeyy</h1>
-        <p>High-quality Louboutin-style shoes for men in Morocco</p>
-    </header>
-    <section class="products">
-        <div class="product">
-            <img src="assets/images/shoe1.jpg" alt="Shoe 1">
-            <h2>750 DH <span class="old-price">850 DH</span></h2>
-            <p class="promo">Promo: -11%</p>
+/* =========================
+   LOAD DATA SAFELY
+========================= */
+
+let data = {
+  accounts: [],
+  checks: {},
+  notes: "",
+  sessions: []
+};
+
+try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+
+  if (saved) {
+    const parsed = JSON.parse(saved);
+
+    data.accounts = Array.isArray(parsed.accounts)
+      ? parsed.accounts
+      : [];
+
+    data.checks = parsed.checks || {};
+    data.notes = parsed.notes || "";
+
+    data.sessions = Array.isArray(parsed.sessions)
+      ? parsed.sessions
+      : [];
+  }
+} catch (error) {
+  console.log("Could not load saved data:", error);
+}
+
+/* =========================
+   SAVE
+========================= */
+
+function save() {
+  localStorage.setItem(
+    STORAGE_KEY,
+    JSON.stringify(data)
+  );
+}
+
+/* =========================
+   VOTE LIMIT
+========================= */
+
+const voteLimitInput =
+  document.getElementById("voteLimit");
+
+const savedLimit =
+  localStorage.getItem("jennie_vote_limit");
+
+if (savedLimit) {
+  voteLimitInput.value = savedLimit;
+}
+
+voteLimitInput.addEventListener("change", () => {
+
+  let value = parseInt(voteLimitInput.value);
+
+  if (!value || value < 1) value = 1;
+  if (value > 100) value = 100;
+
+  voteLimitInput.value = value;
+
+  localStorage.setItem(
+    "jennie_vote_limit",
+    value
+  );
+
+  renderAccounts();
+  updateStats();
+});
+
+/* =========================
+   ADD ACCOUNT
+========================= */
+
+function addAccount() {
+
+  const input =
+    document.getElementById("accountInput");
+
+  let username =
+    input.value.trim();
+
+  if (!username) {
+    alert("Please enter an Instagram username.");
+    return;
+  }
+
+  if (!username.startsWith("@")) {
+    username = "@" + username;
+  }
+
+  const exists = data.accounts.some(
+    account =>
+      account.username.toLowerCase() ===
+      username.toLowerCase()
+  );
+
+  if (exists) {
+    alert("That account is already added.");
+    return;
+  }
+
+  data.accounts.push({
+    id:
+      Date.now().toString() +
+      Math.random().toString(36).slice(2),
+
+    username: username,
+
+    votes: 0,
+
+    sessions: 0,
+
+    lastSession: null
+  });
+
+  input.value = "";
+
+  save();
+
+  renderAccounts();
+
+  updateStats();
+}
+
+/* =========================
+   OPEN MTV
+========================= */
+
+function openMTV() {
+  window.open(
+    "https://www.instagram.com/mtv/",
+    "_blank"
+  );
+}
+
+/* =========================
+   COMPLETE SESSION
+========================= */
+
+function completeSession(id) {
+
+  const account =
+    data.accounts.find(
+      account => account.id === id
+    );
+
+  if (!account) return;
+
+  let voteLimit =
+    parseInt(voteLimitInput.value);
+
+  if (!voteLimit || voteLimit < 1) {
+    voteLimit = 1;
+  }
+
+  account.votes += voteLimit;
+
+  account.sessions += 1;
+
+  account.lastSession =
+    new Date().toISOString();
+
+  data.sessions.push({
+    accountId: account.id,
+    username: account.username,
+    votes: voteLimit,
+    timestamp: new Date().toISOString()
+  });
+
+  save();
+
+  renderAccounts();
+
+  updateStats();
+
+  alert(
+    `${voteLimit} vote${voteLimit === 1 ? "" : "s"} marked as self-reported for ${account.username}.`
+  );
+}
+
+/* =========================
+   DELETE ACCOUNT
+========================= */
+
+function deleteAccount(id) {
+
+  const account =
+    data.accounts.find(
+      account => account.id === id
+    );
+
+  if (!account) return;
+
+  if (
+    !confirm(
+      `Remove ${account.username} from your tracker?`
+    )
+  ) {
+    return;
+  }
+
+  data.accounts =
+    data.accounts.filter(
+      account => account.id !== id
+    );
+
+  save();
+
+  renderAccounts();
+
+  updateStats();
+}
+
+/* =========================
+   ESCAPE HTML
+========================= */
+
+function escapeHTML(text) {
+
+  const div =
+    document.createElement("div");
+
+  div.textContent = text;
+
+  return div.innerHTML;
+}
+
+/* =========================
+   RENDER ACCOUNTS
+========================= */
+
+function renderAccounts() {
+
+  const list =
+    document.getElementById("accountList");
+
+  const summary =
+    document.getElementById("accountSummary");
+
+  list.innerHTML = "";
+
+  if (
+    !Array.isArray(data.accounts) ||
+    data.accounts.length === 0
+  ) {
+
+    list.innerHTML = `
+      <div class="empty">
+        No Instagram accounts added yet.
+      </div>
+    `;
+
+    summary.textContent = "0 accounts";
+
+    return;
+  }
+
+  const voteLimit =
+    parseInt(voteLimitInput.value) || 20;
+
+  data.accounts.forEach(account => {
+
+    const item =
+      document.createElement("div");
+
+    item.className =
+      "account-item";
+
+    const percent =
+      Math.min(
+        100,
+        (account.votes / voteLimit) * 100
+      );
+
+    const completed =
+      account.votes >= voteLimit;
+
+    if (completed) {
+      item.classList.add("completed");
+    }
+
+    item.innerHTML = `
+
+      <div class="account-top">
+
+        <div class="account-name">
+          ${escapeHTML(account.username)}
         </div>
-        <div class="product">
-            <img src="assets/images/shoe2.jpg" alt="Shoe 2">
-            <h2>750 DH <span class="old-price">850 DH</span></h2>
-            <p class="promo">Promo: -11%</p>
+
+        <button
+          class="delete-btn"
+          title="Remove account"
+        >
+          ×
+        </button>
+
+      </div>
+
+      <div class="account-progress">
+
+        <div class="progress-header">
+
+          <span>
+            Session progress
+          </span>
+
+          <span class="progress-count">
+            ${account.votes} / ${voteLimit}
+          </span>
+
         </div>
-    </section>
-    <footer>
-        <p>Order from website or Instagram</p>
-        <marquee><strong>Free shipping for 2 or more orders</strong></marquee>
-        <p><img src="assets/images/facebook.png" alt="Facebook" class="icon"> cekeyy yves</p>
-        <p><img src="assets/images/instagram.png" alt="Instagram" class="icon"> yvescekeyy</p>
-        <p class="note">We currently only ship within Morocco</p>
-    </footer>
-</body>
-</html>
+
+        <div class="progress-bar">
+
+          <div
+            class="progress-fill"
+            style="width:${percent}%"
+          ></div>
+
+        </div>
+
+        <div class="account-status ${
+          completed ? "completed" : ""
+        }">
+
+          ${
+            completed
+              ? "✓ Session marked complete — self-reported"
+              : account.sessions > 0
+                ? `${account.sessions} session${account.sessions === 1 ? "" : "s"} recorded`
+                : "No session recorded yet"
+          }
+
+        </div>
+
+      </div>
+
+      <div class="account-actions">
+
+        <a
+          class="link-button open-account-btn"
+          href="https://www.instagram.com/mtv/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          OPEN MTV
+        </a>
+
+        <button
+          class="complete-btn ${
+            completed ? "completed" : ""
+          }"
+        >
+
+          ${
+            completed
+              ? "✓ SESSION RECORDED"
+              : "MARK SESSION COMPLETE"
+          }
+
+        </button>
+
+      </div>
+    `;
+
+    item
+      .querySelector(".delete-btn")
+      .onclick = () =>
+        deleteAccount(account.id);
+
+    item
+      .querySelector(".complete-btn")
+      .onclick = () =>
+        completeSession(account.id);
+
+    list.appendChild(item);
+  });
+
+  summary.textContent =
+    `${data.accounts.length} account${
+      data.accounts.length === 1 ? "" : "s"
+    }`;
+}
+
+/* =========================
+   UPDATE STATS
+========================= */
+
+function updateStats() {
+
+  let totalVotes = 0;
+  let totalSessions = 0;
+  let completedAccounts = 0;
+
+  data.accounts.forEach(account => {
+
+    totalVotes +=
+      Number(account.votes) || 0;
+
+    totalSessions +=
+      Number(account.sessions) || 0;
+
+    const voteLimit =
+      parseInt(voteLimitInput.value) || 20;
+
+    if (account.votes >= voteLimit) {
+      completedAccounts++;
+    }
+  });
+
+  document.getElementById(
+    "totalVotes"
+  ).textContent = totalVotes;
+
+  document.getElementById(
+    "totalSessions"
+  ).textContent = totalSessions;
+
+  document.getElementById(
+    "completedAccounts"
+  ).textContent =
+    completedAccounts;
+}
+
+/* =========================
+   CHECKLIST
+========================= */
+
+document
+  .querySelectorAll(
+    'input[type="checkbox"][data-check]'
+  )
+  .forEach(box => {
+
+    box.addEventListener("change", () => {
+
+      data.checks[
+        box.dataset.check
+      ] = box.checked;
+
+      save();
+    });
+  });
+
+/* =========================
+   NOTES
+========================= */
+
+document
+  .getElementById("notes")
+  .addEventListener("input", event => {
+
+    data.notes = event.target.value;
+
+    save();
+  });
+
+/* =========================
+   ENTER KEY
+========================= */
+
+document
+  .getElementById("accountInput")
+  .addEventListener("keydown", event => {
+
+    if (event.key === "Enter") {
+      addAccount();
+    }
+  });
+
+/* =========================
+   RESET
+========================= */
+
+function resetData() {
+
+  if (
+    !confirm(
+      "Reset your entire voting tracker, including accounts and session history?"
+    )
+  ) {
+    return;
+  }
+
+  data = {
+    accounts: [],
+    checks: {},
+    notes: "",
+    sessions: []
+  };
+
+  save();
+
+  updateDisplay();
+}
+
+/* =========================
+   UPDATE EVERYTHING
+========================= */
+
+function updateDisplay() {
+
+  document
+    .querySelectorAll(
+      'input[type="checkbox"][data-check]'
+    )
+    .forEach(box => {
+
+      box.checked =
+        !!data.checks[box.dataset.check];
+    });
+
+  document.getElementById("notes").value =
+    data.notes || "";
+
+  renderAccounts();
+
+  updateStats();
+}
+
+/* =========================
+   START
+========================= */
+
+updateDisplay();
+
+    </script>
